@@ -16,21 +16,28 @@ const API_URL =
 function parseCsv(text) {
   return text
     .trim()
-    .split("\n")
+    .split(/\r?\n/)
     .slice(1)
+    .filter(Boolean)
     .map((line) => {
       const [timestamp, city, temperature] = line.split(",");
 
       return {
-        timestamp,
-        city,
+        timestamp: timestamp.trim(),
+        city: city.trim(),
         temperature: Number(temperature)
       };
     });
 }
 
+function normalizeTimestamp(timestamp) {
+  return timestamp.trim().replace(" ", "T");
+}
+
 function formatTime(timestamp) {
-  return new Date(timestamp).toLocaleTimeString("nl-NL", {
+  const fixed = normalizeTimestamp(timestamp);
+
+  return new Date(fixed).toLocaleTimeString("nl-NL", {
     hour: "2-digit",
     minute: "2-digit"
   });
@@ -40,26 +47,33 @@ function convertRows(rows) {
   const grouped = new Map();
 
   rows.forEach((row) => {
-    if (!grouped.has(row.timestamp)) {
-      grouped.set(row.timestamp, {
+    const fixedTimestamp = normalizeTimestamp(row.timestamp);
+
+    if (!grouped.has(fixedTimestamp)) {
+      grouped.set(fixedTimestamp, {
+        timestamp: fixedTimestamp,
         time: formatTime(row.timestamp)
       });
     }
 
-    grouped.get(row.timestamp)[row.city] = row.temperature;
+    grouped.get(fixedTimestamp)[row.city] = row.temperature;
   });
 
-  return Array.from(grouped.values());
+  return Array.from(grouped.values()).sort(
+    (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+  );
 }
 
 export default function App() {
   const [rows, setRows] = useState([]);
+  const [lastUpdated, setLastUpdated] = useState("");
 
   async function loadData() {
     const response = await fetch(API_URL);
     const text = await response.text();
 
     setRows(parseCsv(text));
+    setLastUpdated(new Date().toLocaleTimeString("nl-NL"));
   }
 
   useEffect(() => {
@@ -83,6 +97,10 @@ export default function App() {
     >
       <h1>Nederland Temperatuur</h1>
 
+      <p style={{ color: "#64748b" }}>
+        Data uit Google Sheets — laatst bijgewerkt: {lastUpdated || "..."}
+      </p>
+
       <div
         style={{
           background: "white",
@@ -93,7 +111,7 @@ export default function App() {
         }}
       >
         <div style={{ width: "100%", height: 500 }}>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" />
 
@@ -110,6 +128,7 @@ export default function App() {
                 dataKey="Maastricht"
                 stroke="#f97316"
                 strokeWidth={3}
+                dot={true}
               />
 
               <Line
@@ -117,6 +136,7 @@ export default function App() {
                 dataKey="Utrecht"
                 stroke="#2563eb"
                 strokeWidth={3}
+                dot={true}
               />
 
               <Line
@@ -124,11 +144,16 @@ export default function App() {
                 dataKey="Groningen"
                 stroke="#16a34a"
                 strokeWidth={3}
+                dot={true}
               />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
+
+      <p style={{ color: "#64748b", marginTop: "12px" }}>
+        Meetpunten: {chartData.length}
+      </p>
     </div>
   );
 }
